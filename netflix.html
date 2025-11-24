@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Netflix BI - Dashboard Streaming (CSV adapté)</title>
+
+    <!-- Bootstrap 5 -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Leaflet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+      :root {
+        --bg: #0f0f10;
+        --card: #141414;
+        --muted: #bdbdbd;
+        --accent: #e50914;
+        --text: #fff;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, system-ui, Segoe UI, Arial;
+      }
+      .navbar {
+        background: #0b0b0b;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+      .brand {
+        color: var(--accent);
+        font-weight: 700;
+        font-size: 1.25rem;
+      }
+      .card {
+        background: var(--card);
+        border: none;
+        color: var(--text);
+      }
+      .btn-netflix {
+        background: var(--accent);
+        color: white;
+        border: none;
+      }
+      .preview-table th {
+        background: var(--accent);
+        color: #fff;
+      }
+      footer {
+        color: var(--muted);
+        padding: 18px 0;
+        text-align: center;
+      }
+      canvas {
+        background: transparent;
+      }
+      #map {
+        height: 420px;
+        border-radius: 8px;
+      }
+      .kpi {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .small-muted {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .filter-row {
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .page {
+        display: none;
+      }
+      .page.active {
+        display: block;
+      }
+      .table thead th {
+        background: rgba(255, 0, 0, 0.12);
+        color: var(--text);
+      }
+      .chip {
+        background: #1b1b1b;
+        padding: 6px 10px;
+        border-radius: 999px;
+        color: var(--muted);
+        margin-right: 6px;
+      }
+      @media (max-width: 768px) {
+        #map {
+          height: 300px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- NAVBAR -->
+    <nav class="navbar navbar-expand-lg">
+      <div class="container-fluid px-4">
+        <div class="d-flex align-items-center gap-3">
+          <span class="brand">NETFLIX BI</span>
+          <span class="small-muted">— Analyse des visionnages</span>
+        </div>
+        <div class="d-flex gap-2 ms-auto">
+          <button class="btn btn-netflix" onclick="showPage('upload')">
+            Importer CSV
+          </button>
+          <button
+            id="showDashboardBtn"
+            class="btn btn-outline-light"
+            onclick="showPage('dashboard')"
+            disabled
+          >
+            Afficher le Dashboard
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main class="container my-4">
+      <!-- UPLOAD PAGE -->
+      <section id="upload" class="page active">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="card p-3">
+              <h4>📥 Importer le fichier CSV</h4>
+              <p class="small-muted">
+                Format requis EXACT :
+                <code
+                  >WatchID,UserID,FilmTitle,Genre,Country,WatchDate,DurationMinutes,Rating,Views</code
+                >
+                (WatchDate: YYYY-MM-DD). Si ton CSV n'a pas la colonne
+                <code>Views</code>, mets 1.
+              </p>
+              <input
+                class="form-control mb-3"
+                type="file"
+                id="csvInput"
+                accept=".csv"
+              />
+              <div class="mb-2 d-flex gap-2">
+                <button id="loadSample" class="btn btn-sm btn-light">
+                  Charger un exemple (démo)
+                </button>
+                <button id="clearData" class="btn btn-sm btn-outline-light">
+                  Réinitialiser
+                </button>
+              </div>
+              <div class="alert alert-warning text-dark small" role="alert">
+                Après chargement, clique sur
+                <strong>Afficher le Dashboard</strong>.
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="card p-3">
+              <h5>Aperçu (10 premières lignes)</h5>
+              <div style="overflow: auto; max-height: 300px">
+                <table
+                  class="table table-sm table-striped preview-table text-white small"
+                  id="previewTable"
+                ></table>
+              </div>
+              <div class="mt-2 d-flex gap-2">
+                <button
+                  id="showAggregates"
+                  class="btn btn-sm btn-outline-light"
+                  disabled
+                >
+                  Voir agrégats (table)
+                </button>
+                <button
+                  id="downloadCsvPreview"
+                  class="btn btn-sm btn-outline-light"
+                  disabled
+                >
+                  Télécharger Preview CSV
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DASHBOARD PAGE -->
+      <section id="dashboard" class="page">
+        <div class="row g-3">
+          <div class="col-12">
+            <div
+              class="card p-3 d-flex justify-content-between align-items-center flex-column flex-md-row"
+            >
+              <div>
+                <h3 class="mb-0">Tableau de bord — Analyse de visionnage</h3>
+                <p class="small-muted mb-0">
+                  Pays • Genre • Tendances mensuelles • Top films
+                </p>
+              </div>
+              <div class="d-flex gap-2 mt-3 mt-md-0">
+                <button
+                  class="btn btn-sm btn-netflix"
+                  onclick="downloadAggregates()"
+                >
+                  Télécharger agrégats (CSV)
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-light"
+                  onclick="showPage('upload')"
+                >
+                  Retour
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="col-12">
+            <div class="card p-3">
+              <div class="d-flex filter-row flex-wrap">
+                <div style="min-width: 180px">
+                  <label class="small-muted">Genre</label>
+                  <select id="filterGenre" class="form-select">
+                    <option value="">Tous</option>
+                  </select>
+                </div>
+                <div style="min-width: 180px">
+                  <label class="small-muted">Pays</label>
+                  <select id="filterCountry" class="form-select">
+                    <option value="">Tous</option>
+                  </select>
+                </div>
+                <div style="min-width: 180px">
+                  <label class="small-muted">Mois (YYYY-MM)</label>
+                  <select id="filterMonth" class="form-select">
+                    <option value="">Tous</option>
+                  </select>
+                </div>
+                <div class="ms-auto d-flex gap-2 align-items-end">
+                  <button
+                    class="btn btn-sm btn-outline-light"
+                    id="clearFilters"
+                  >
+                    Effacer filtres
+                  </button>
+                  <div class="chip" id="activeFilters">Filtres: Auc.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- KPIs -->
+          <div class="col-md-3">
+            <div class="card p-3">
+              <h6 class="mb-2">Nombre total des vues</h6>
+              <div id="kpi_total" class="kpi">0</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card p-3">
+              <h6 class="mb-2">Nombre des titres</h6>
+              <div id="kpi_titles" class="kpi">0</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card p-3">
+              <h6 class="mb-2">Nombre de pays</h6>
+              <div id="kpi_countries" class="kpi">0</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card p-3">
+              <h6 class="mb-2">Durée totale (min) / Note moyenne</h6>
+              <div class="d-flex justify-content-between">
+                <div id="kpi_duration" class="kpi">0</div>
+                <div id="kpi_rating" class="kpi">0.0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ROW: Map + Genre pie + Month trend -->
+          <div class="col-lg-6">
+            <div class="card p-3">
+              <h5>🔴 Carte : Vues par pays</h5>
+              <div id="map"></div>
+              <small class="small-muted">Bulles proportionnelles au nombre de vues (par pays).</small>
+            </div>
+          </div>
+
+          <div class="col-lg-3">
+            <div class="card p-3">
+              <h5>Vues par Genre</h5>
+              <canvas id="genreChart"></canvas>
+            </div>
+          </div>
+
+          <div class="col-lg-3">
+            <div class="card p-3">
+              <h5>Vues par mois</h5>
+              <canvas id="monthChart"></canvas>
+            </div>
+          </div>
+
+          <!-- ROW: Top films -->
+          <div class="col-12">
+            <div class="card p-3">
+              <h5>Top films (par vues) — couleur = genre</h5>
+              <canvas id="filmChart" height="120"></canvas>
+              <small class="small-muted"
+                >Clique sur une barre pour filtrer par film.</small
+              >
+            </div>
+          </div>
+
+          <!-- Aggregates table -->
+          <div class="col-12">
+            <div class="card p-3">
+              <h5>Tableau récapitulatif</h5>
+              <div style="overflow: auto; max-height: 300px">
+                <table
+                  class="table table-sm table-striped text-white small"
+                  id="aggTable"
+                ></table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- USER REVIEWS SECTION -->
+      <section id="userReviews" class="page active mt-4">
+        <div class="card p-3">
+          <h5>💬 Avis des utilisateurrrrrs</h5>
+          <p class="small-muted">Partagez votre expérience avec notre plateforme.</p>
+          
+          <!-- Formulaire pour ajouter un avis -->
+          <div class="mb-3">
+            <input type="text" id="userName" class="form-control mb-2" placeholder="Votre nom" />
+            <textarea id="userComment" class="form-control mb-2" rows="2" placeholder="Votre avis"></textarea>
+            <a href="C:\Users\hanec\OneDrive\Bureau\proj bi\avis.html" class="btn btn-netflix" id="addReviewBtn">Ajouter avis</a>
+          </div>
+
+          <!-- Liste des avis -->
+          <div id="reviewsList" style="max-height: 300px; overflow-y: auto;">
+            <p class="small-muted">Aucun avis pour le moment.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="mt-4">
+        Rapport local — Dashboard Web (Bootstrap + Chart.js + Leaflet)
+      </footer>
+    </main>
+      <section id="userReviews" class="page">
+      <div class="container my-4">
+        <div class="card p-3 bg-dark text-white">
+          <h5>Avis des utilisateurs</h5>
+          <ul id="reviewsList" class="list-group list-group-flush text-white"></ul>
+          <div class="mt-3">
+            <input type="text" id="reviewInput" class="form-control mb-2" placeholder="Écrire un avis...">
+            
+          </div>
+           <div id="messageBox"></div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      /* =========================
+     Configuration & constants
+     ========================= */
+      const REQUIRED_HEADERS = [
+        "WatchID",
+        "UserID",
+        "FilmTitle",
+        "Genre",
+        "Country",
+        "WatchDate",
+        "DurationMinutes",
+        "Rating",
+        "Views",
+      ];
+      const GENRE_COLORS = {
+        Action: "#d32f2f",
+        Comedy: "#ff8a65",
+        Drama: "#7b1fa2",
+        "Sci-Fi": "#4caf50",
+        Romance: "#f06292",
+        Horror: "#6d4c41",
+        Fantasy: "#29b6f6",
+        Documentary: "#9e9e9e",
+        Crime: "#c62828",
+        Thriller: "#ff7043",
+      };
+      const COUNTRY_COORDS = {
+        "United States": [37.0902, -95.7129],
+        USA: [37.0902, -95.7129],
+        "United Kingdom": [55.3781, -3.436],
+        France: [46.2276, 2.2137],
+        Germany: [51.1657, 10.4515],
+        India: [20.5937, 78.9629],
+        China: [35.8617, 104.1954],
+        Brazil: [-14.235, -51.9253],
+        Canada: [56.1304, -106.3468],
+        Australia: [-25.2744, 133.7751],
+        Spain: [40.4637, -3.7492],
+        Italy: [41.8719, 12.5674],
+        Mexico: [23.6345, -102.5528],
+        Japan: [36.2048, 138.2529],
+        Russia: [61.524, 105.3188],
+        "South Africa": [-30.5595, 22.9375],
+        Argentina: [-38.4161, -63.6167],
+        Colombia: [4.5709, -74.2973],
+        Netherlands: [52.1326, 5.2913],
+        Sweden: [60.1282, 18.6435],
+        Poland: [51.9194, 19.1451],
+      };
+
+      let rawData = [];
+      let filteredData = [];
+      let aggregates = {};
+      let leafletMap, leafletLayerGroup;
+      let genreChart, monthChart, filmChart;
+
+      /* =========================
+     Utility helpers
+     ========================= */
+      function escapeHtml(s) {
+        return String(s)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      }
+      function normalizeCountryName(name) {
+        if (!name) return name;
+        const n = name.trim().toLowerCase();
+        if (
+          n.includes("usa") ||
+          n.includes("united states") ||
+          n.includes("etats-unis") ||
+          n === "us"
+        )
+          return "United States";
+        if (
+          n.includes("uk") ||
+          n.includes("united kingdom") ||
+          n.includes("royaume") ||
+          n === "gb"
+        )
+          return "United Kingdom";
+        if (n.includes("france")) return "France";
+        if (n.includes("germany") || n.includes("allemagne")) return "Germany";
+        if (
+          n.includes("brasil") ||
+          n.includes("brésil") ||
+          n.includes("brazil")
+        )
+          return "Brazil";
+        if (n.includes("espagne") || n.includes("spain")) return "Spain";
+        if (n.includes("italie") || n.includes("italy")) return "Italy";
+        if (n.includes("mexique") || n.includes("mexico")) return "Mexico";
+        if (n.includes("japon") || n.includes("japan")) return "Japan";
+        if (n.includes("canada")) return "Canada";
+        if (n.includes("poland") || n.includes("pologne")) return "Poland";
+        return name;
+      }
+      function formatMonthFromISO(iso) {
+        // accept YYYY-MM-DD or YYYY-MM
+        if (!iso) return "";
+        const parts = iso.split("-");
+        if (parts.length >= 2) return `${parts[0]}-${parts[1]}`;
+        return iso;
+      }
+      function prettyMonthLabel(yyyymm) {
+        // returns "Mar 2025" in fr locale (short month + year)
+        if (!yyyymm) return "";
+        const [y, m] = yyyymm.split("-");
+        const d = new Date(y, Number(m) - 1, 1);
+        return d.toLocaleString("fr-FR", { month: "short", year: "numeric" });
+      }
+
+      /* =========================
+     CSV Parsing (robuste)
+     ========================= */
+      function parseCSV(text) {
+        // Handle quoted fields and commas inside quotes
+        // Simple CSV parser using regex to split lines then parse fields with state machine
+        const lines = text
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n")
+          .split("\n")
+          .filter((l) => l.trim() !== "");
+        if (lines.length < 1) return [];
+        const headers = splitCSVLine(lines[0]).map((h) => h.trim());
+        // header validation - allow if Views absent but warn
+        const hasViews = headers.includes("Views");
+        const required = REQUIRED_HEADERS.slice();
+        if (!hasViews) {
+          // allow but warn user
+          // but continue parsing by assuming Views default 1
+          // we'll still accept if the headers include first 8 columns
+          const expected = REQUIRED_HEADERS.slice(0, 8);
+          for (let i = 0; i < expected.length; i++) {
+            if (!headers.includes(expected[i])) {
+              alert(
+                "CSV invalide. Colonnes requises (ouvoir): " +
+                  expected.join(", ")
+              );
+              return [];
+            }
+          }
+        } else {
+          for (let req of REQUIRED_HEADERS) {
+            if (!headers.includes(req)) {
+              alert(
+                "CSV invalide. Colonnes requises : " +
+                  REQUIRED_HEADERS.join(", ")
+              );
+              return [];
+            }
+          }
+        }
+
+        const idx = {};
+        headers.forEach((h, i) => (idx[h] = i));
+        const data = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = splitCSVLine(lines[i]);
+          if (cols.length < headers.length - (hasViews ? 0 : 1)) continue;
+          const record = {
+            WatchID: cols[idx["WatchID"]] ? cols[idx["WatchID"]].trim() : "",
+            UserID: cols[idx["UserID"]] ? cols[idx["UserID"]].trim() : "",
+            FilmTitle: cols[idx["FilmTitle"]]
+              ? cols[idx["FilmTitle"]].trim()
+              : "",
+            Genre: cols[idx["Genre"]] ? cols[idx["Genre"]].trim() : "Unknown",
+            Country: cols[idx["Country"]]
+              ? cols[idx["Country"]].trim()
+              : "Unknown",
+            WatchDate: cols[idx["WatchDate"]]
+              ? cols[idx["WatchDate"]].trim()
+              : "",
+            DurationMinutes: Number(cols[idx["DurationMinutes"]]) || 0,
+            Rating:
+              cols[idx["Rating"]] !== undefined && cols[idx["Rating"]] !== ""
+                ? Number(cols[idx["Rating"]])
+                : null,
+            Views:
+              idx["Views"] !== undefined ? Number(cols[idx["Views"]]) || 1 : 1,
+          };
+          // normalize country names
+          record.Country = normalizeCountryName(record.Country);
+          // normalize month field
+          record.Month = formatMonthFromISO(record.WatchDate);
+          data.push(record);
+        }
+        return data;
+      }
+
+      function splitCSVLine(line) {
+        const res = [];
+        let cur = "";
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            // toggle quotes
+            if (inQuotes && line[i + 1] === '"') {
+              cur += '"';
+              i++;
+              continue;
+            }
+            inQuotes = !inQuotes;
+            continue;
+          }
+          if (ch === "," && !inQuotes) {
+            res.push(cur);
+            cur = "";
+            continue;
+          }
+          cur += ch;
+        }
+        res.push(cur);
+        return res;
+      }
+
+      /* =========================
+     Aggregation (Views-aware)
+     ========================= */
+      function computeAggregates(data) {
+        const filmCount = {},
+          genreCount = {},
+          countryCount = {},
+          monthCount = {},
+          filmMeta = {};
+        let totalDuration = 0,
+          ratingSum = 0,
+          ratingCount = 0,
+          totalViews = 0;
+
+        data.forEach((r) => {
+          const v = r.Views && !isNaN(r.Views) ? Number(r.Views) : 1;
+          totalViews += v;
+
+          filmCount[r.FilmTitle] = (filmCount[r.FilmTitle] || 0) + v;
+          genreCount[r.Genre] = (genreCount[r.Genre] || 0) + v;
+          countryCount[r.Country] = (countryCount[r.Country] || 0) + v;
+
+          const month = r.Month || formatMonthFromISO(r.WatchDate);
+          monthCount[month] = (monthCount[month] || 0) + v;
+
+          if (!filmMeta[r.FilmTitle])
+            filmMeta[r.FilmTitle] = {
+              genre: r.Genre,
+              count: 0,
+              duration: 0,
+              ratingSum: 0,
+              ratingCount: 0,
+            };
+          filmMeta[r.FilmTitle].count += v;
+          filmMeta[r.FilmTitle].duration += (r.DurationMinutes || 0) * v;
+          if (r.Rating !== null && !isNaN(r.Rating)) {
+            filmMeta[r.FilmTitle].ratingSum += r.Rating * v;
+            filmMeta[r.FilmTitle].ratingCount += v;
+            ratingSum += r.Rating * v;
+            ratingCount += v;
+          }
+
+          totalDuration += (r.DurationMinutes || 0) * v;
+        });
+
+        // compute month keys sorted
+        const monthKeys = Object.keys(monthCount)
+          .filter((k) => k)
+          .sort(); // YYYY-MM sort ok
+        aggregates = {
+          totalViews,
+          distinctTitles: Object.keys(filmCount).length,
+          distinctCountries: Object.keys(countryCount).length,
+          totalDuration,
+          avgRating: ratingCount ? ratingSum / ratingCount : null,
+          filmCount,
+          genreCount,
+          countryCount,
+          monthCount,
+          monthKeys,
+          filmMeta,
+        };
+        return aggregates;
+      }
+
+      /* =========================
+     Render preview
+     ========================= */
+      function renderPreview(data) {
+        const preview = data.slice(0, 10);
+        if (preview.length === 0) {
+          document.getElementById("previewTable").innerHTML =
+            "<tr><td>Aucune donnée.</td></tr>";
+          return;
+        }
+        const headers = Object.keys(preview[0]).filter((h) => h !== "Month"); // hide Month in preview if present
+        let html =
+          "<thead><tr>" +
+          headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("") +
+          "</tr></thead><tbody>";
+        preview.forEach((row) => {
+          html +=
+            "<tr>" +
+            headers
+              .map(
+                (h) =>
+                  `<td>${escapeHtml(
+                    String(row[h] === null ? "" : row[h] || "")
+                  )}</td>`
+              )
+              .join("") +
+            "</tr>";
+        });
+        html += "</tbody>";
+        document.getElementById("previewTable").innerHTML = html;
+      }
+
+      /* =========================
+     Charts builders
+     ========================= */
+      function buildGenreChart(ctx, genreCount) {
+        const labels = Object.keys(genreCount).sort(
+          (a, b) => genreCount[b] - genreCount[a]
+        );
+        const values = labels.map((l) => genreCount[l]);
+        const colors = labels.map((l) => GENRE_COLORS[l] || randomColorFor(l));
+        if (genreChart) genreChart.destroy();
+        genreChart = new Chart(ctx.getContext("2d"), {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{ data: values, backgroundColor: colors }],
+          },
+          options: {
+            plugins: {
+              legend: { position: "bottom", labels: { color: "#fff" } },
+              tooltip: { mode: "index" },
+            },
+          },
+        });
+      }
+
+      function buildMonthChart(ctx, monthCount, monthKeys) {
+        const labels = monthKeys.map((k) => prettyMonthLabel(k));
+        const values = monthKeys.map((k) => monthCount[k] || 0);
+        if (monthChart) monthChart.destroy();
+        monthChart = new Chart(ctx.getContext("2d"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "Nombre de vues",
+                data: values,
+                tension: 0.25,
+                borderColor: "#e50914",
+                backgroundColor: "rgba(229,9,20,0.12)",
+                fill: true,
+                pointRadius: 4,
+              },
+            ],
+          },
+          options: {
+            scales: {
+              x: { ticks: { color: "#ddd" } },
+              y: { ticks: { color: "#ddd" } },
+            },
+            plugins: { legend: { labels: { color: "#fff" } } },
+          },
+        });
+      }
+
+      function buildFilmChart(ctx, filmMeta) {
+        const arr = Object.keys(filmMeta).map((k) => {
+          const meta = filmMeta[k];
+          const avgRating = meta.ratingCount
+            ? meta.ratingSum / meta.ratingCount
+            : 0;
+          const popularity = meta.count * avgRating;
+          return {
+            title: k,
+            genre: meta.genre,
+            count: meta.count,
+            avgRating,
+            popularity,
+          };
+        });
+        arr.sort((a, b) => b.count - a.count);
+        const top = arr.slice(0, 20);
+        const labels = top.map((t) => t.title);
+        const values = top.map((t) => t.count);
+        const colors = top.map(
+          (t) => GENRE_COLORS[t.genre] || randomColorFor(t.genre)
+        );
+        if (filmChart) filmChart.destroy();
+        filmChart = new Chart(ctx.getContext("2d"), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              { label: "Vues", data: values, backgroundColor: colors },
+            ],
+          },
+          options: {
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: (ctx) => `Vues: ${ctx.raw}` } },
+            },
+            scales: {
+              x: { ticks: { color: "#ddd" }, beginAtZero: true },
+              y: { ticks: { color: "#ddd" } },
+            },
+            onClick: (evt, elements) => {
+              if (!elements.length) return;
+              const index = elements[0].index;
+              const selectedFilm = filmChart.data.labels[index];
+              applyFilter({ FilmTitle: selectedFilm });
+            },
+          },
+        });
+      }
+
+      function randomColorFor(key) {
+        let hash = 0;
+        for (let i = 0; i < key.length; i++)
+          hash = key.charCodeAt(i) + ((hash << 5) - hash);
+        const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+        return "#" + "00000".substring(0, 6 - c.length) + c;
+      }
+
+      /* =========================
+     Leaflet map
+     ========================= */
+      function initMap() {
+        if (leafletMap) return;
+        leafletMap = L.map("map", { scrollWheelZoom: false }).setView(
+          [20, 0],
+          2
+        );
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap contributors",
+        }).addTo(leafletMap);
+        leafletLayerGroup = L.layerGroup().addTo(leafletMap);
+      }
+
+      function renderMap(countryCount) {
+        initMap();
+        leafletLayerGroup.clearLayers();
+        const entries = Object.keys(countryCount)
+          .map((c) => ({ country: c, count: countryCount[c] }))
+          .sort((a, b) => b.count - a.count);
+        entries.forEach((e) => {
+          const coords =
+            COUNTRY_COORDS[e.country] ||
+            COUNTRY_COORDS[normalizeCountryName(e.country)];
+          if (coords) {
+            const radius = 30000 + e.count * 12000;
+            const marker = L.circle([coords[0], coords[1]], {
+              radius: radius,
+              color: "#e50914",
+              fillColor: "#e50914",
+              fillOpacity: 0.28,
+            }).bindPopup(
+              `<strong>${escapeHtml(e.country)}</strong><br/>Vues: ${e.count}`
+            );
+            leafletLayerGroup.addLayer(marker);
+          }
+        });
+        const layers = leafletLayerGroup.getLayers();
+        if (layers.length > 0) {
+          const group = new L.featureGroup(layers);
+          leafletMap.fitBounds(group.getBounds().pad(0.5));
+        }
+      }
+
+      /* =========================
+     Aggregates table & download
+     ========================= */
+      function renderAggregatesTable(ag) {
+        // Right column: top films
+        const filmTop = Object.keys(ag.filmCount)
+          .map((k) => ({ k, v: ag.filmCount[k] }))
+          .sort((a, b) => b.v - a.v);
+        const topCountries = Object.keys(ag.countryCount)
+          .map((k) => ({ k, v: ag.countryCount[k] }))
+          .sort((a, b) => b.v - a.v);
+        const genreTop = Object.keys(ag.genreCount)
+          .map((k) => ({ k, v: ag.genreCount[k] }))
+          .sort((a, b) => b.v - a.v);
+
+        let html =
+          "<thead><tr><th>Pays</th><th>Vues</th><th>Genre</th><th>Vues</th><th>Film</th><th>Vues</th></tr></thead><tbody>";
+        const rows = Math.max(10, filmTop.length);
+        for (let i = 0; i < rows; i++) {
+          const c = topCountries[i] ? topCountries[i].k : "";
+          const cCount = topCountries[i] ? topCountries[i].v : "";
+          const g = genreTop[i] ? genreTop[i].k : "";
+          const gCount = genreTop[i] ? genreTop[i].v : "";
+          const f = filmTop[i] ? filmTop[i].k : "";
+          const fCount = filmTop[i] ? filmTop[i].v : "";
+          html += `<tr><td>${escapeHtml(
+            c
+          )}</td><td>${cCount}</td><td>${escapeHtml(
+            g
+          )}</td><td>${gCount}</td><td>${escapeHtml(
+            f
+          )}</td><td>${fCount}</td></tr>`;
+        }
+        html += "</tbody>";
+        document.getElementById("aggTable").innerHTML = html;
+      }
+
+      function downloadAggregates() {
+        const ag = aggregates;
+        if (!ag || !ag.filmCount) return alert("Aucune agrégation disponible.");
+        let rows = ["Type,Key,Value"];
+        rows.push(`TotalViews,TotalViews,${ag.totalViews}`);
+        rows.push(`TotalDuration,Minutes,${ag.totalDuration}`);
+        rows.push(
+          `AvgRating,Rating,${
+            ag.avgRating === null ? "" : ag.avgRating.toFixed(2)
+          }`
+        );
+        Object.keys(ag.genreCount).forEach((k) =>
+          rows.push(`Genre,${k},${ag.genreCount[k]}`)
+        );
+        Object.keys(ag.countryCount).forEach((k) =>
+          rows.push(`Country,${k},${ag.countryCount[k]}`)
+        );
+        Object.keys(ag.filmCount).forEach((k) =>
+          rows.push(`Film,${k},${ag.filmCount[k]}`)
+        );
+        const blob = new Blob([rows.join("\n")], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "aggregates.csv";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      /* =========================
+     Filtering & Update pipeline
+     ========================= */
+      function applyFilter(filterObj) {
+        // filterObj may include keys: Genre, Country, Month, FilmTitle
+        const currentGenre = document.getElementById("filterGenre").value;
+        const currentCountry = document.getElementById("filterCountry").value;
+        const currentMonth = document.getElementById("filterMonth").value;
+
+        // start from rawData then apply all filters + filterObj override
+        filteredData = rawData.filter((r) => {
+          if (filterObj.FilmTitle && r.FilmTitle !== filterObj.FilmTitle)
+            return false;
+          if (currentGenre && r.Genre !== currentGenre) return false;
+          if (currentCountry && r.Country !== currentCountry) return false;
+          if (currentMonth && r.Month !== currentMonth) return false;
+          return true;
+        });
+
+        // update active filters UI
+        const active = [];
+        if (currentGenre) active.push(`Genre:${currentGenre}`);
+        if (currentCountry) active.push(`Pays:${currentCountry}`);
+        if (currentMonth) active.push(`Mois:${currentMonth}`);
+        if (filterObj.FilmTitle) active.push(`Film:${filterObj.FilmTitle}`);
+        document.getElementById("activeFilters").innerText = active.length
+          ? "Filtres: " + active.join(" • ")
+          : "Filtres: Auc.";
+
+        // recompute aggregates and redraw
+        aggregates = computeAggregates(filteredData);
+        updateKPIs();
+        buildAllChartsAndMap();
+      }
+
+      function updateKPIs() {
+        document.getElementById("kpi_total").innerText =
+          aggregates.totalViews || 0;
+        document.getElementById("kpi_titles").innerText =
+          aggregates.distinctTitles || 0;
+        document.getElementById("kpi_countries").innerText =
+          aggregates.distinctCountries || 0;
+        document.getElementById("kpi_duration").innerText =
+          aggregates.totalDuration || 0;
+        document.getElementById("kpi_rating").innerText = aggregates.avgRating
+          ? aggregates.avgRating.toFixed(2)
+          : "N/A";
+      }
+
+      function fillFiltersFromData(data) {
+        // fill unique sorted lists
+        const genreSet = new Set(data.map((r) => r.Genre).filter(Boolean));
+        const countrySet = new Set(data.map((r) => r.Country).filter(Boolean));
+        const monthSet = new Set(data.map((r) => r.Month).filter(Boolean));
+        fillSelect("filterGenre", [""].concat([...genreSet].sort()));
+        fillSelect("filterCountry", [""].concat([...countrySet].sort()));
+        fillSelect("filterMonth", [""].concat([...monthSet].sort()));
+      }
+
+      function fillSelect(id, items) {
+        const sel = document.getElementById(id);
+        // preserve selection
+        const prev = sel.value;
+        sel.innerHTML = "";
+        items.forEach((v) => {
+          const o = document.createElement("option");
+          o.value = v;
+          o.textContent = v || (id === "filterMonth" ? "" : "Tous");
+          sel.appendChild(o);
+        });
+        if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+      }
+
+      /* =========================
+     Build everything
+     ========================= */
+      function buildAllChartsAndMap() {
+        if (!aggregates || !aggregates.filmCount) return;
+        buildGenreChart(
+          document.getElementById("genreChart"),
+          aggregates.genreCount
+        );
+        buildMonthChart(
+          document.getElementById("monthChart"),
+          aggregates.monthCount,
+          aggregates.monthKeys
+        );
+        buildFilmChart(
+          document.getElementById("filmChart"),
+          aggregates.filmMeta
+        );
+        renderMap(aggregates.countryCount);
+        renderAggregatesTable(aggregates);
+      }
+
+      /* =========================
+     UI events binding
+     ========================= */
+      document
+        .getElementById("csvInput")
+        .addEventListener("change", function (evt) {
+          const f = evt.target.files[0];
+          if (!f) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            rawData = parseCSV(e.target.result);
+            if (!rawData.length) return alert("Aucune ligne parsée.");
+            // initial filteredData = rawData
+            filteredData = [...rawData];
+            aggregates = computeAggregates(filteredData);
+            renderPreview(rawData);
+            fillFiltersFromData(rawData);
+            document.getElementById("showDashboardBtn").disabled = false;
+            document.getElementById("showAggregates").disabled = false;
+            document.getElementById("downloadCsvPreview").disabled = false;
+            updateKPIs();
+            buildAllChartsAndMap();
+          };
+          reader.readAsText(f, "utf-8");
+        });
+
+      document
+        .getElementById("loadSample")
+        .addEventListener("click", function () {
+          const sample = `WatchID,UserID,FilmTitle,Genre,Country,WatchDate,DurationMinutes,Rating,Views
+1,U100,Friends,Comedy,United States,2025-03-01,22,4.5,1
+2,U101,Dark,Drama,Germany,2025-03-05,50,4.2,2
+3,U102,The Boys,Action,United Kingdom,2025-04-10,45,4.0,3
+4,U103,Stranger Things,Sci-Fi,United States,2025-05-02,55,4.6,1
+5,U104,Bridgerton,Romance,United Kingdom,2025-06-18,40,3.9,2
+6,U105,Lupin,Action,France,2025-06-20,48,4.1,1
+7,U106,Narcos,Drama,Brazil,2025-07-12,50,4.3,2
+8,U107,Peaky Blinders,Drama,United Kingdom,2025-07-15,60,4.4,1
+9,U108,Money Heist,Action,Spain,2025-08-01,52,4.0,1
+10,U109,The Witcher,Fantasy,Poland,2025-08-05,55,3.8,1`;
+          rawData = parseCSV(sample);
+          filteredData = [...rawData];
+          aggregates = computeAggregates(filteredData);
+          renderPreview(rawData);
+          fillFiltersFromData(rawData);
+          document.getElementById("showDashboardBtn").disabled = false;
+          document.getElementById("showAggregates").disabled = false;
+          document.getElementById("downloadCsvPreview").disabled = false;
+          updateKPIs();
+          buildAllChartsAndMap();
+        });
+
+      document
+        .getElementById("clearData")
+        .addEventListener("click", function () {
+          rawData = [];
+          filteredData = [];
+          aggregates = {};
+          document.getElementById("previewTable").innerHTML = "";
+          document.getElementById("showDashboardBtn").disabled = true;
+          document.getElementById("showAggregates").disabled = true;
+          document.getElementById("downloadCsvPreview").disabled = true;
+          fillSelect("filterGenre", [""]);
+          fillSelect("filterCountry", [""]);
+          fillSelect("filterMonth", [""]);
+          updateKPIs();
+          if (genreChart) genreChart.destroy();
+          if (monthChart) monthChart.destroy();
+          if (filmChart) filmChart.destroy();
+          if (leafletLayerGroup) leafletLayerGroup.clearLayers();
+        });
+
+      document
+        .getElementById("showAggregates")
+        .addEventListener("click", function () {
+          if (!aggregates || !aggregates.filmCount) return;
+          renderAggregatesTable(aggregates);
+          showPage("dashboard");
+        });
+
+      document
+        .getElementById("downloadCsvPreview")
+        .addEventListener("click", function () {
+          if (!rawData.length) return;
+          const hdr = [
+            "WatchID",
+            "UserID",
+            "FilmTitle",
+            "Genre",
+            "Country",
+            "WatchDate",
+            "DurationMinutes",
+            "Rating",
+            "Views",
+          ];
+          const rows = [hdr.join(",")].concat(
+            rawData.map((r) =>
+              [
+                r.WatchID,
+                r.UserID,
+                `"${(r.FilmTitle || "").replace(/"/g, '""')}"`,
+                r.Genre,
+                r.Country,
+                r.WatchDate,
+                r.DurationMinutes,
+                r.Rating === null ? "" : r.Rating,
+                r.Views,
+              ].join(",")
+            )
+          );
+          const blob = new Blob([rows.join("\n")], {
+            type: "text/csv;charset=utf-8;",
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "preview.csv";
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        });
+
+      document
+        .getElementById("filterGenre")
+        .addEventListener("change", () => applyFilter({}));
+      document
+        .getElementById("filterCountry")
+        .addEventListener("change", () => applyFilter({}));
+      document
+        .getElementById("filterMonth")
+        .addEventListener("change", () => applyFilter({}));
+      document.getElementById("clearFilters").addEventListener("click", () => {
+        fillSelect(
+          "filterGenre",
+          [""].concat([...new Set(rawData.map((r) => r.Genre))])
+        );
+        fillSelect(
+          "filterCountry",
+          [""].concat([...new Set(rawData.map((r) => r.Country))])
+        );
+        fillSelect(
+          "filterMonth",
+          [""].concat([...new Set(rawData.map((r) => r.Month))])
+        );
+        applyFilter({});
+      });
+
+      /* =========================
+     Page navigation
+     ========================= */
+      function showPage(id) {
+        document
+          .querySelectorAll(".page")
+          .forEach((s) => s.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+        if (id === "dashboard") buildAllChartsAndMap();
+      }
+
+      // initialize map
+      initMap();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+  const reviews = [];
+  const reviewsList = document.getElementById("reviewsList");
+  const reviewInput = document.getElementById("reviewInput");
+  const addReviewBtn = document.getElementById("addReviewBtn");
+  const messageBox = document.getElementById("messageBox");
+
+  function renderReviews() {
+    reviewsList.innerHTML = reviews
+      .map(r => `<li class="list-group-item bg-dark text-white">${r}</li>`)
+      .join("");
+  }
+
+  addReviewBtn.addEventListener("click", () => {
+    const val = reviewInput.value.trim();
+    if (!val) return;
+
+    // Ajouter l'avis
+    reviews.push(val);
+    renderReviews();
+
+    // Vider le champ
+    reviewInput.value = "";
+
+    // Afficher le message de succès
+    messageBox.innerText = "Envoyé avec succès !";
+    messageBox.classList.add("alert", "alert-success", "mt-2");
+
+    // Effacer le message après 2 secondes
+    setTimeout(() => {
+      messageBox.innerText = "";
+      messageBox.classList.remove("alert", "alert-success", "mt-2");
+    }, 2000);
+  });
+
+  renderReviews();
+</script>
+
+
+
+  </body>
+</html>
