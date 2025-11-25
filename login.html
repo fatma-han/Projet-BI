@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentification</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #141414; /* Netflix dark */
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .auth-container {
+            background: #1f1f1f;
+            padding: 40px;
+            border-radius: 10px;
+            width: 350px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.4);
+        }
+
+        h2 {
+            text-align: center;
+            color: #e50914;
+            margin-bottom: 25px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 6px;
+            border: none;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 12px;
+            background: #e50914;
+            border: none;
+            color: white;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        .btn-login:hover {
+            background: #f6121d;
+        }
+
+        .link {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .link a {
+            color: #e50914;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="auth-container">
+        <h2>Connexion</h2>
+
+        <form action="netflix.html" method="GET">
+            <input type="email" placeholder="Adresse email" required>
+            <input type="password" placeholder="Mot de passe" required>
+
+            <!-- Bouton qui redirige vers home.html -->
+            <button type="submit" class="btn-login">Se connecter</button>
+        </form>
+
+        <div class="link">
+            Pas de compte ? <a href="#">Créer un compte</a>
+        </div>
+    </div>
+
+</body>
+</html>
